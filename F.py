@@ -375,28 +375,29 @@ for i, row in buths.iterrows():
         
 del bun['temp']
 
+# 重新計算比例
 buths0 = bun.query('韻目 in @l')
 buths = buths0.groupby(['韻目', '等', '呼', '聲母', '閩南語韻母']).size().reset_index(name='字數')
-buths['比例'] = buths['字數'] / buths.groupby(['韻目', '等', '呼', '閩南語韻母'])['字數'].transform('sum')
+
+# 這裡在做的事是將同一個韻目、閩南語韻母組合對應的聲母合併
+# 先是把聲母組用list統整起來，套到每一個字的聲母欄位
+buths['聲母'] = [list(buths0[(buths0['韻目'] == row['韻目']) & (buths0['閩南語韻母'] == row['閩南語韻母']) & (buths0['呼'] == row['呼']) & (buths0['等'] == row['等'])]['聲母']) for i, row in buths.iterrows()]
+# 接著要把list裡的聲母拆成一個字串
+def O(x):
+    o = ''
+    x = list(set(x))
+    for i in list(x):
+        o += str(i)
+    return o
+buths['聲母'] = buths['聲母'].apply(O)
+buths = buths.drop_duplicates()
+# 重新計算比例
+buths['比例'] = buths.groupby(['韻目', '閩南語韻母','呼', '等'])['字數'].transform('sum') / buths.groupby(['韻目','呼', '等'])['字數'].transform('sum')
 buths['比例'] = round(buths['比例'], 2)
-
 ''''''
-
-for i in buths['韻目'].unique():
-    munum = len(bun[bun['韻目'] == i]['閩南語韻母'].unique())
-    npstd = 0
-    for j in buths[buths['韻目'] == i]['聲母'].unique():
-        l = list(buths[(buths['韻目'] == i) & (buths['聲母'] == j)]['比例'])
-        while len(l) < munum:
-            l.append(0)
-        npstd += np.std(l)*(buths[(buths['韻目'] == i) & (buths['聲母'] == j)].shape[0] / buths[buths['韻目'] == i].shape[0])
-    print(i, npstd)
-    buths.loc[buths['韻目'] == i, 'temp'] = npstd
-buths = buths[buths['temp'] > 0.2]
-del buths['temp']
-
-''''''
-buths['例字'] = [list(buths0[(buths0['韻目'] == row['韻目']) & (buths0['閩南語韻母'] == row['閩南語韻母']) & (buths0['等'] == row['等']) & (buths0['呼'] == row['呼']) & (buths0['聲母'] == row['聲母'])]['字'])[0] for i, row in buths.iterrows()]
+buths['例字'] = [list(buths0[(buths0['韻目'] == row['韻目']) & (buths0['閩南語韻母'] == row['閩南語韻母']) & (buths0['等'] == row['等']) & (buths0['呼'] == row['呼'])]['字'])[0] for i, row in buths.iterrows()]
+# 沒有分歧的部分挑出來
+buths = buths[buths['比例'] != 1]
 bguth = pd.DataFrame(buths.groupby(['韻目','等', '呼', '閩南語韻母', '聲母'])[['比例', '例字']].apply(lambda x: x.iloc[0]))
 
 
@@ -451,6 +452,62 @@ bgut = pd.DataFrame(but.groupby(['韻目','等', '閩南語韻母'])[['比例', 
 
 
 # %%
+# 找出分析呼後還有分歧且與呼無關的韻母，看看其對應的聲母有哪些
+l = [i for i in b_un['韻目'] if (buh[(buh['韻目'] == i)]['比例'].count() != 1)]
+l = list(set(l))
+l = [i for i in l if (len(bun[bun['韻目'] == i]['聲母'].unique()) != 1)]
+buhs0 = bun.query('(韻目 in @l) & (韻目 in @buh["韻目"]) & ~(韻目 in @buth["韻目"]) & ~(韻目 in @but["韻目"])')
+buhs = buhs0.groupby(['韻目', '呼', '聲母', '閩南語韻母']).size().reset_index(name='字數')
+buhs['比例'] = buhs.groupby(['韻目', '閩南語韻母', '呼'])['字數'].transform('sum') / buhs.groupby(['韻目', '呼'])['字數'].transform('sum')
+
+''''''
+
+# 消除破音字
+buhs = buhs.sort_values(by='比例', ascending=False)
+bun['temp'] = False
+for i, row in buhs.iterrows():
+    u = row['韻目']
+    mu = row['閩南語韻母']
+    h = row['呼']
+    s = row['聲母']
+
+    for j in list(bun[(bun['韻目'] == u) & (bun['閩南語韻母'] == mu) & (bun['呼'] == h) & (bun['聲母'] == s)]['字']):
+            if bun[bun['字'] == j].sort_values(by='temp', ascending=False)['temp'].reset_index().loc[0,'temp']:
+                bun = bun[~((bun['字'] == j) & (~bun['temp']))]
+            else:
+                bun.loc[((bun['韻目'] == u) & (bun['閩南語韻母'] == mu) & (bun['呼'] == h) & (bun['聲母'] == s) & (bun['字'] == j)),'temp'] = True
+        
+del bun['temp']
+
+# 重新計算比例
+buhs0 = bun.query('(韻目 in @l) & (韻目 in @buh["韻目"]) & ~(韻目 in @buth["韻目"]) & ~(韻目 in @but["韻目"])')
+buhs = buhs0.groupby(['韻目', '呼', '聲母', '閩南語韻母']).size().reset_index(name='字數')
+
+# 統整聲母
+buhs['聲母'] = [list(buhs0[(buhs0['韻目'] == row['韻目']) & (buhs0['閩南語韻母'] == row['閩南語韻母']) & (buhs0['呼'] == row['呼'])]['聲母']) for i, row in buhs.iterrows()]
+# 把list拆成str
+def O(x):
+    o = ''
+    x = list(set(x))
+    for i in list(x):
+        o += str(i)
+    return o
+buhs['聲母'] = buhs['聲母'].apply(O)
+buhs = buhs.drop_duplicates()
+# 重新計算比例
+buhs['比例'] = buhs.groupby(['韻目', '閩南語韻母', '呼'])['字數'].transform('sum') / buhs.groupby(['韻目', '呼'])['字數'].transform('sum')
+buhs['比例'] = round(buhs['比例'], 2)
+
+''''''
+
+# 例字
+buhs['例字'] = [list(buhs0[(buhs0['韻目'] == row['韻目']) & (buhs0['閩南語韻母'] == row['閩南語韻母']) & (buhs0['呼'] == row['呼'])]['字'])[0] for i, row in buhs.iterrows()]
+# 沒有分歧的部分挑出來
+buhs = buhs[buhs['比例'] != 1]
+bguhs = pd.DataFrame(buhs.groupby(['韻目','呼', '閩南語韻母', '聲母'])[['比例', '例字']].apply(lambda x: x.iloc[0]))
+
+
+# %%
 l = [i for i in b_un['韻目'] if (but[(but['韻目'] == i)]['比例'].count() != 1)]
 l = list(set(l))
 l = [i for i in l if (len(bun[bun['韻目'] == i]['聲母'].unique()) != 1)]
@@ -494,6 +551,7 @@ buts['比例'] = round(buts['比例'], 2)
 ''''''
 
 buts['例字'] = [list(buts0[(buts0['韻目'] == row['韻目']) & (buts0['閩南語韻母'] == row['閩南語韻母']) & (buts0['等'] == row['等'])]['字'])[0] for i, row in buts.iterrows()]
+buts = buts[buts['比例'] != 1]
 bguts = pd.DataFrame(buts.groupby(['韻目','等', '閩南語韻母', '聲母'])[['比例', '例字']].apply(lambda x: x.iloc[0]))
 
 
@@ -542,11 +600,15 @@ bgus = pd.DataFrame(bus.groupby(['韻目', '閩南語韻母', '聲母'])[['比�
 
 
 # %%
-BGUS = buts.query('~(韻目 in @bus["韻目"])')
-BGUS = pd.concat([BGUS, bus],ignore_index=True)
+BGUS = bus.query('~(韻目 in @buts["韻目"])')
+BGUS = pd.concat([BGUS, buts],ignore_index=True)
+BGUS = BGUS.query('~(韻目 in @buths["韻目"])')
+BGUS = pd.concat([BGUS, buths],ignore_index=True)
+BGUS = BGUS.query('~(韻目 in @buhs["韻目"])')
+BGUS = pd.concat([BGUS, buhs],ignore_index=True)
 BGUS = BGUS.fillna('-')
 
-BGUS = pd.DataFrame(BGUS.groupby(['韻目','等', '閩南語韻母', '聲母'])[['比例', '例字']].apply(lambda x: x.iloc[0]))
+BGUS = pd.DataFrame(BGUS.groupby(['韻目','等','呼', '閩南語韻母', '聲母'])[['比例', '例字']].apply(lambda x: x.iloc[0]))
 
 # %%
 BGUN = b_un.query('~(韻目 in @buh["韻目"])')
@@ -654,6 +716,7 @@ def generator(text):
             st.write(figt, unsafe_allow_html=True)
         else:
             st.write('輸入錯誤')
+        st.markdown('---')
 
 # 添加生成的按鈕
 if st.button("查詢"):
