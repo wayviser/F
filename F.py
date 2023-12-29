@@ -874,3 +874,6 @@ if st.button("查詢"):
 # - - - 
 # #### *最後在終端機上 `F.py` 輸入 `streamlit run F.py` 就大功告成了！！*
 # - - - 
+
+# %% [markdown]
+# 結果如repo中F.py所呈現
